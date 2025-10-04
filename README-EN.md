@@ -10,7 +10,7 @@ Secure File Share is a single-admin file distribution service that listens only 
   - Expiration by duration or absolute timestamp
   - Optional IP allowlists
 - Persistent bookkeeping for download counts, expiration, and archives; logs are written to `logs/server.log`.
-- The console can download files directly from URLs, defaulting to the current directory (or a custom location). It attempts a multithreaded transfer first and falls back to single-threaded if necessary.
+- The console can download files directly from URLs. Downloads default to `data/downloads/` (you may create subdirectories there) and attempt a multithreaded transfer, falling back to single-threaded if needed.
 - CLI helper `manage.py` handles init/start/stop/status/run workflows.
 - The web UI auto-detects the browser language (Chinese or English) and offers a manual toggle.
 
@@ -75,10 +75,16 @@ Protect the public endpoint with HTTPS and, if possible, additional authenticati
 - Share metadata: `data/shares.json`
 - Bookmark metadata: `data/bookmarks.json`
 - ZIP archives for shared folders: `data/archives/`
+- Direct-download files: `data/downloads/`
 - Runtime PID: `run/server.pid`
 - Logs: `logs/server.log`
 
 All directories are created automatically.
+
+## 📖 Important Documentation
+
+- **[Blocked Paths Rules](BLOCKED_PATHS.md)** - Detailed explanation of which directories and files are blocked
+- **[Security Fixes](SECURITY_FIXES.md)** - List of fixed security vulnerabilities
 
 ## Security Recommendations
 
@@ -86,6 +92,34 @@ All directories are created automatically.
 - Restrict access to the reverse proxy endpoint (VPN, firewall, basic auth) in addition to the built-in login.
 - Keep the proxy and firewall rules tightened so only trusted hosts can reach the localhost port.
 - Review `logs/server.log` regularly or forward it to your central logging platform.
+
+## 🔒 Security Fixes (2025-10-04)
+
+This project has undergone comprehensive security hardening with the following critical vulnerabilities fixed:
+
+### Fixed Security Issues
+
+1. ✅ **Path Traversal Protection** - Blocks access to system sensitive directories (/etc, /root, /home, etc.)
+2. ✅ **SSRF Attack Prevention** - Prevents internal network probing and cloud metadata access
+3. ✅ **Brute Force Protection** - Login rate limiting (5 attempts / 5 minutes)
+4. ✅ **Session Management Enhancement** - Limits concurrent sessions, auto-cleanup expired sessions
+5. ✅ **File Size Limits** - Prevents DoS attacks (max 2 GiB)
+6. ✅ **Error Message Protection** - Doesn't leak system details
+7. ✅ **CSP Policy Hardening** - Prevents XSS attacks
+8. ✅ **Cookie Security Attributes** - HttpOnly, Secure, SameSite=Strict
+
+See `SECURITY_FIXES.md` for detailed fix descriptions.
+
+### Production Environment Setup
+
+If using HTTPS reverse proxy, set environment variable before starting:
+
+```bash
+export ENABLE_HTTPS=true
+python3 manage.py start
+```
+
+This enables the `Secure` flag on cookies, ensuring they're only transmitted over HTTPS.
 
 ## Development Notes
 

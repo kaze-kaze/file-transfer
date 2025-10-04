@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,14 +15,25 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .bookmarks import BookmarkManager
 from .config import BASE_DIR, ConfigManager
-from .downloader import DownloadError, download_from_url
+from .downloader import DownloadError, download_from_url, fetch_metadata
 from .security import verify_password
 from .session import SessionManager
 from .share import ShareManager
+from .rate_limiter import RateLimiter
+from .path_validator import (
+    validate_path_access,
+    validate_download_url,
+    validate_download_target_dir,
+    PathValidationError,
+    URLValidationError,
+)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 DATA_DIR = os.path.join(BASE_DIR, "data")
+DOWNLOADS_ROOT = os.path.join(DATA_DIR, "downloads")
+MAX_DOWNLOAD_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+MIN_FREE_SPACE_BUFFER_BYTES = 512 * 1024 * 1024  # 512 MiB
 
 
 @dataclass
@@ -30,7 +42,10 @@ class ServerContext:
     session_manager: SessionManager
     share_manager: ShareManager
     bookmark_manager: BookmarkManager
+    rate_limiter: RateLimiter
     session_timeout_minutes: int
+    downloads_root: str
+    enable_https: bool = False  # Set to True if behind HTTPS proxy
 
 
 class FileShareRequestHandler(BaseHTTPRequestHandler):
@@ -59,6 +74,7 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {
                     "username": session.username,
                     "expires_at": int(session.expires_at),
+                    "downloads_root": self.context.downloads_root,
                 })
                 return
             if route == "/api/bookmarks":
@@ -89,7 +105,7 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # pylint: disable=broad-except
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "Internal server error", "detail": str(exc)},
+                {"error": "Internal server error"},
             )
 
     def do_POST(self) -> None:  # noqa: N802
@@ -141,7 +157,7 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # pylint: disable=broad-except
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "Internal server error", "detail": str(exc)},
+                {"error": "Internal server error"},
             )
 
     def do_DELETE(self) -> None:  # noqa: N802
@@ -166,16 +182,25 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # pylint: disable=broad-except
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "Internal server error", "detail": str(exc)},
+                {"error": "Internal server error"},
             )
 
     def _handle_static(self, route: str) -> None:
         rel_path = route[len("/static/"):]
         safe_path = os.path.normpath(rel_path)
-        if safe_path.startswith(".."):
+
+        # Enhanced path traversal protection
+        if safe_path.startswith("..") or os.path.isabs(safe_path):
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
             return
+
         file_path = os.path.join(STATIC_DIR, safe_path)
+
+        # Ensure final path is within STATIC_DIR
+        if not os.path.abspath(file_path).startswith(os.path.abspath(STATIC_DIR)):
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "Forbidden"})
+            return
+
         if not os.path.isfile(file_path):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
             return
@@ -211,7 +236,12 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         self._send_response(HTTPStatus.OK, mime, content)
 
     def _list_directory(self, path: str, show_hidden: bool = False) -> Dict[str, Any]:
-        target = os.path.abspath(unquote(path))
+        # Validate path access first
+        try:
+            target = validate_path_access(unquote(path), allow_custom=True)
+        except PathValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
         if not os.path.exists(target):
             raise FileNotFoundError("Path does not exist")
         if not os.path.isdir(target):
@@ -272,20 +302,51 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
 
     def _handle_login(self) -> None:
+        client_ip = self._get_client_ip()
+
+        # Check rate limiting
+        if not self.context.rate_limiter.is_allowed(client_ip):
+            remaining = self.context.rate_limiter.get_remaining_lockout(client_ip)
+            self._send_json(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {
+                    "error": f"Too many failed login attempts. Please try again in {remaining} seconds.",
+                    "retry_after": remaining,
+                },
+            )
+            return
+
         payload = self._read_json()
         username = (payload.get("username") or "").strip()
         password = payload.get("password") or ""
+
         if not username or not password:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Username and password required"})
             return
+
         admin = self.context.config.get_admin()
-        if username != admin.username:
+
+        # Verify credentials
+        if username != admin.username or not verify_password(
+            password, admin.salt, admin.password_hash, admin.iterations
+        ):
+            # Record failed attempt
+            self.context.rate_limiter.record_failed_attempt(client_ip)
             self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Invalid credentials"})
             return
-        if not verify_password(password, admin.salt, admin.password_hash, admin.iterations):
-            self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Invalid credentials"})
-            return
-        token = self.context.session_manager.create_session(admin.username, self.context.session_timeout_minutes)
+
+        # Successful login - clear rate limiting
+        self.context.rate_limiter.record_successful_attempt(client_ip)
+
+        # Invalidate old session token if exists
+        old_token = self._get_session_token()
+        if old_token:
+            self.context.session_manager.invalidate(old_token)
+
+        # Create new session
+        token = self.context.session_manager.create_session(
+            admin.username, self.context.session_timeout_minutes
+        )
         cookie = self._set_session_cookie(token)
         self._send_json(HTTPStatus.OK, {"message": "Login successful"}, cookies=[cookie])
 
@@ -334,16 +395,34 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         url = (payload.get("url") or "").strip()
         if not url:
             raise ValueError("Download URL is required")
+
+        # Validate URL to prevent SSRF attacks
+        try:
+            validate_download_url(url)
+        except URLValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
         target_dir = (payload.get("target_dir") or "").strip()
         if not target_dir:
-            target_dir = os.getcwd()
+            target_dir = DOWNLOADS_ROOT
         if not os.path.isabs(target_dir):
             target_dir = os.path.abspath(target_dir)
+
+        # Validate target directory is within allowed paths
+        try:
+            target_dir = validate_download_target_dir(target_dir)
+        except PathValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
         if not os.path.isdir(target_dir):
             raise ValueError("Target directory must exist")
+
         filename = (payload.get("filename") or "").strip() or None
         try:
-            result = download_from_url(url, target_dir, filename)
+            # Pass max size limit to prevent DoS
+            result = download_from_url(
+                url, target_dir, filename, max_size_bytes=MAX_DOWNLOAD_SIZE_BYTES
+            )
         except DownloadError as exc:
             raise ValueError(str(exc)) from exc
         return {
@@ -443,14 +522,20 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'")
+        # Stricter CSP - only allow resources from same origin
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'self'; form-action 'self'",
+        )
 
     def _set_session_cookie(self, token: str) -> str:
         cookie = SimpleCookie()
         cookie["session_id"] = token
         cookie["session_id"]["httponly"] = True
-        cookie["session_id"]["secure"] = False
-        cookie["session_id"]["samesite"] = "Lax"
+        # Only set Secure flag if behind HTTPS proxy
+        # When using reverse proxy with HTTPS, set enable_https=True in context
+        cookie["session_id"]["secure"] = self.context.enable_https
+        cookie["session_id"]["samesite"] = "Strict"  # Changed from Lax to Strict for better security
         cookie["session_id"]["path"] = "/"
         return cookie.output(header="", sep="").strip()
 
@@ -460,7 +545,7 @@ class FileShareRequestHandler(BaseHTTPRequestHandler):
         cookie["session_id"]["path"] = "/"
         cookie["session_id"]["httponly"] = True
         cookie["session_id"]["expires"] = "Thu, 01 Jan 1970 00:00:00 GMT"
-        cookie["session_id"]["samesite"] = "Lax"
+        cookie["session_id"]["samesite"] = "Strict"
         return cookie.output(header="", sep="").strip()
 
     def _redirect(self, location: str) -> None:
@@ -479,12 +564,20 @@ def build_context() -> ServerContext:
     server_config = config.get_server()
     share_manager = ShareManager(os.path.join(DATA_DIR, "shares.json"))
     bookmark_manager = BookmarkManager(os.path.join(DATA_DIR, "bookmarks.json"))
+    os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+
+    # Check if HTTPS is enabled via environment variable
+    enable_https = os.environ.get("ENABLE_HTTPS", "false").lower() in ["true", "1", "yes"]
+
     return ServerContext(
         config=config,
-        session_manager=SessionManager(),
+        session_manager=SessionManager(max_sessions_per_user=3),
         share_manager=share_manager,
         bookmark_manager=bookmark_manager,
+        rate_limiter=RateLimiter(max_attempts=5, window_seconds=300, lockout_seconds=300),
         session_timeout_minutes=server_config.session_timeout_minutes,
+        downloads_root=DOWNLOADS_ROOT,
+        enable_https=enable_https,
     )
 
 

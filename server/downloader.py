@@ -3,8 +3,7 @@ from __future__ import annotations
 import math
 import os
 import re
-import tempfile
-import threading
+import shutil
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -30,33 +29,7 @@ MAX_THREADS = 4
 CHUNK_SIZE = 256 * 1024  # 256 KiB
 
 
-def download_from_url(url: str, target_dir: str, filename: Optional[str] = None) -> DownloadResult:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise DownloadError("Only HTTP and HTTPS URLs are supported.")
-    if not os.path.isdir(target_dir):
-        raise DownloadError("Target directory does not exist or is not a directory.")
-
-    head_info = _fetch_head(url)
-    size = head_info.get("content_length")
-    accept_ranges = head_info.get("accept_ranges") == "bytes"
-    final_name = _ensure_unique_filename(target_dir, filename or _infer_filename(url, head_info))
-    destination = os.path.join(target_dir, final_name)
-
-    if size and size >= MIN_MULTI_SIZE and accept_ranges:
-        try:
-            _download_multi(url, destination, size)
-            return DownloadResult(path=destination, filename=final_name, size=size, multithreaded=True)
-        except Exception:  # noqa: BLE001
-            if os.path.exists(destination):
-                os.remove(destination)
-
-    _download_single(url, destination)
-    final_size = os.path.getsize(destination)
-    return DownloadResult(path=destination, filename=final_name, size=final_size, multithreaded=False)
-
-
-def _fetch_head(url: str) -> Dict[str, Optional[str]]:
+def fetch_metadata(url: str) -> Dict[str, Optional[str]]:
     info: Dict[str, Optional[str]] = {"content_length": None, "accept_ranges": None, "filename": None}
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
     try:
@@ -77,6 +50,57 @@ def _fetch_head(url: str) -> Dict[str, Optional[str]]:
             return info
     except Exception as exc:  # noqa: BLE001
         raise DownloadError(f"Unable to initiate download: {exc}") from exc
+
+
+def download_from_url(
+    url: str,
+    target_dir: str,
+    filename: Optional[str] = None,
+    *,
+    max_size_bytes: Optional[int] = None,
+    metadata: Optional[Dict[str, Optional[str]]] = None,
+) -> DownloadResult:
+    if not os.path.isdir(target_dir):
+        raise DownloadError("Target directory does not exist or is not a directory.")
+
+    head_info = metadata or fetch_metadata(url)
+    size = head_info.get("content_length")
+    accept_ranges = head_info.get("accept_ranges") == "bytes"
+    final_name = _ensure_unique_filename(target_dir, filename or _infer_filename(url, head_info))
+    destination = os.path.join(target_dir, final_name)
+
+    if max_size_bytes and size and size > max_size_bytes:
+        raise DownloadError("File exceeds maximum allowed size.")
+
+    if size and size >= MIN_MULTI_SIZE and accept_ranges:
+        try:
+            _download_multi(url, destination, size)
+            if max_size_bytes and os.path.getsize(destination) > max_size_bytes:
+                raise DownloadError("Downloaded file exceeds maximum allowed size.")
+            return DownloadResult(path=destination, filename=final_name, size=size, multithreaded=True)
+        except DownloadError:
+            if os.path.exists(destination):
+                os.remove(destination)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if os.path.exists(destination):
+                os.remove(destination)
+            raise DownloadError(str(exc)) from exc
+
+    try:
+        _download_single(url, destination, max_size_bytes)
+        final_size = os.path.getsize(destination)
+        if max_size_bytes and final_size > max_size_bytes:
+            raise DownloadError("Downloaded file exceeds maximum allowed size.")
+        return DownloadResult(path=destination, filename=final_name, size=final_size, multithreaded=False)
+    except DownloadError:
+        if os.path.exists(destination):
+            os.remove(destination)
+        raise
+    except Exception as exc:
+        if os.path.exists(destination):
+            os.remove(destination)
+        raise DownloadError(str(exc)) from exc
 
 
 def _download_multi(url: str, destination: str, total_size: int) -> None:
@@ -124,26 +148,26 @@ def _merge_parts(part_files: List[str], destination: str) -> None:
     with open(destination, "wb") as dest:
         for part in part_files:
             with open(part, "rb") as src:
-                while True:
-                    chunk = src.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    dest.write(chunk)
+                shutil.copyfileobj(src, dest)
 
 
-def _download_single(url: str, destination: str) -> None:
+def _download_single(url: str, destination: str, max_size_bytes: Optional[int]) -> None:
     headers = {"User-Agent": USER_AGENT}
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
         if resp.status >= 400:
             raise DownloadError(f"Download failed with status {resp.status}.")
         os.makedirs(os.path.dirname(destination), exist_ok=True)
+        total = 0
         with open(destination, "wb") as fh:
             while True:
                 chunk = resp.read(CHUNK_SIZE)
                 if not chunk:
                     break
                 fh.write(chunk)
+                total += len(chunk)
+                if max_size_bytes and total > max_size_bytes:
+                    raise DownloadError("Download exceeded maximum allowed size.")
 
 
 def _split_ranges(total_size: int, num_parts: int) -> List[tuple[int, int]]:

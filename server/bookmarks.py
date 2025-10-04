@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from .security import generate_random_string
 from .storage import JSONStorage
+from .path_validator import validate_path_access, PathValidationError
 
 
 @dataclass
@@ -27,9 +28,15 @@ class BookmarkManager:
             return list(self._storage.read())
 
     def add_bookmark(self, label: str, path: str) -> Bookmark:
-        abs_path = os.path.abspath(path)
+        # Validate path security
+        try:
+            abs_path = validate_path_access(path, allow_custom=True)
+        except PathValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
         if not os.path.isdir(abs_path):
             raise NotADirectoryError("Bookmark path must be an existing directory.")
+
         with self._lock:
             bookmarks = self._storage.read()
             identifier = self._generate_identifier(bookmarks)

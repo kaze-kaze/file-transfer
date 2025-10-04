@@ -70,7 +70,7 @@
       downloadModalTitle: '下载文件',
       downloadUrlLabel: '下载链接',
       downloadUrlPlaceholder: 'https://example.com/file.zip',
-      downloadTargetLabel: '保存目录',
+      downloadTargetLabel: '保存目录（仅限 data/downloads/）',
       downloadTargetPlaceholder: '默认当前目录',
       downloadFilenameLabel: '文件名（可选）',
       downloadFilenamePlaceholder: '使用原文件名',
@@ -152,7 +152,7 @@
       downloadModalTitle: 'Download File',
       downloadUrlLabel: 'Download URL',
       downloadUrlPlaceholder: 'https://example.com/file.zip',
-      downloadTargetLabel: 'Save to directory',
+      downloadTargetLabel: 'Save to directory (within data/downloads/)',
       downloadTargetPlaceholder: 'Defaults to current directory',
       downloadFilenameLabel: 'File name (optional)',
       downloadFilenamePlaceholder: 'Use remote file name',
@@ -178,6 +178,7 @@
     showHidden: false,
     session: null,
     currentListing: null,
+    downloadsRoot: '',
   };
 
   const els = {
@@ -447,6 +448,7 @@
       const payload = {
         url,
         target_dir: target,
+        current_path: state.currentPath || '',
       };
       if (filename) {
         payload.filename = filename;
@@ -470,8 +472,17 @@
   }
 
   function updateDownloadTargetField() {
-    if (els.downloadTarget) {
-      els.downloadTarget.value = state.currentPath || '';
+    if (!els.downloadTarget) {
+      return;
+    }
+    const current = state.currentPath || '';
+    const root = state.downloadsRoot || '';
+    if (root && current.startsWith(root)) {
+      els.downloadTarget.value = current;
+    } else if (root) {
+      els.downloadTarget.value = root;
+    } else {
+      els.downloadTarget.value = current;
     }
   }
 
@@ -540,6 +551,7 @@
       return;
     }
     state.session = session;
+    state.downloadsRoot = session.downloads_root || state.downloadsRoot || '';
     if (els.sessionUser) {
       setText(els.sessionUser, t('sessionUserLabel', { username: session.username }));
     }
@@ -547,6 +559,10 @@
       const timeText = formatRelativeTime(session.expires_at);
       setText(els.sessionExpiry, t('sessionExpiryLabel', { time: timeText }));
     }
+    if (els.downloadTarget && state.downloadsRoot) {
+      els.downloadTarget.setAttribute('placeholder', state.downloadsRoot);
+    }
+    updateDownloadTargetField();
   }
 
   async function loadBookmarks() {
@@ -773,6 +789,7 @@
         updateSelectedFile();
       }
     }
+    updateDownloadTargetField();
   }
 
   function createRow(name, fullPath, isDir, size, modified) {

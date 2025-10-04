@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure File Share 控制台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body class="app-shell">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand__icon">&#63743;</span>
+        <span class="brand__name" id="brand-name" data-i18n="brandName">Secure File Share</span>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-header">
+          <h2 id="bookmarks-title" data-i18n="bookmarksTitle">书签</h2>
+          <button id="add-bookmark" class="icon-btn" title="添加当前路径到书签">+</button>
+        </div>
+        <ul id="bookmark-list" class="nav-list" aria-label="书签列表"></ul>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-header">
+          <h2 id="shares-title" data-i18n="sharesTitle">分享链接</h2>
+          <button id="refresh-shares" class="icon-btn" title="刷新分享链接">&#x21bb;</button>
+        </div>
+        <ul id="share-list" class="nav-list nav-list--compact" aria-label="分享链接"></ul>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="top-bar">
+        <div class="session-info">
+          <span id="session-user"></span>
+          <span id="session-expiry" class="session-expiry"></span>
+        </div>
+        <div class="top-actions">
+          <button id="lang-toggle" class="ghost">English</button>
+          <button id="logout-btn" class="ghost" data-i18n="logout">退出登录</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <header class="panel__header">
+          <h2 id="file-browser-title" data-i18n="fileBrowserTitle">文件浏览器</h2>
+          <div class="path-bar">
+            <input id="path-input" type="text" spellcheck="false">
+            <button id="go-path" class="ghost" data-i18n="jump">跳转</button>
+            <label class="toggle" for="toggle-hidden" id="toggle-hidden-label">
+              <input type="checkbox" id="toggle-hidden">
+              <span data-i18n="toggleHidden">显示隐藏文件</span>
+            </label>
+            <button id="open-download-modal" class="ghost" data-i18n="openDownloader">下载文件</button>
+          </div>
+        </header>
+        <div class="panel__content">
+          <table class="fs-table" aria-label="文件列表">
+            <thead>
+              <tr>
+                <th id="th-name" data-i18n="columnName">名称</th>
+                <th id="th-size" data-i18n="columnSize">大小</th>
+                <th id="th-modified" data-i18n="columnModified">更新时间</th>
+                <th id="th-actions" data-i18n="columnActions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="fs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel__header">
+          <h2 id="share-panel-title" data-i18n="sharePanelTitle">创建分享链接</h2>
+          <span id="selected-file" class="file-chip">未选择文件</span>
+        </header>
+        <form id="share-form" class="share-form panel__content">
+          <div class="form-grid">
+            <label id="max-downloads-label">
+              <span data-i18n="maxDownloadsLabel">允许下载次数</span>
+              <input type="number" id="max-downloads" min="1" placeholder="">
+            </label>
+            <label id="expires-hours-label">
+              <span data-i18n="expiresHoursLabel">有效期（小时）</span>
+              <input type="number" id="expires-hours" min="1" placeholder="">
+            </label>
+            <label class="full" id="allowed-ips-label">
+              <span data-i18n="allowedIpsLabel">指定允许访问的 IP（逗号或换行分隔，留空则不限）</span>
+              <textarea id="allowed-ips" rows="2" placeholder=""></textarea>
+            </label>
+          </div>
+          <div class="share-actions">
+            <button type="submit" class="primary" id="share-submit" data-i18n="generateShare" disabled>生成分享链接</button>
+            <p id="share-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </section>
+      <div class="modal" id="download-modal" aria-hidden="true">
+    <div class="modal-backdrop" id="download-modal-backdrop"></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="download-modal-title">
+      <button type="button" class="icon-btn icon-btn--sm modal-close" id="download-modal-close" aria-label="Close">×</button>
+      <h2 id="download-modal-title" data-i18n="downloadModalTitle">下载文件</h2>
+      <form id="download-form" class="modal-form">
+        <label id="download-url-label">
+          <span data-i18n="downloadUrlLabel">下载链接</span>
+          <input type="url" id="download-url" required placeholder="https://example.com/file.zip">
+        </label>
+        <label id="download-target-label">
+          <span data-i18n="downloadTargetLabel">保存目录</span>
+          <input type="text" id="download-target" required>
+        </label>
+        <label id="download-filename-label">
+          <span data-i18n="downloadFilenameLabel">文件名（可选）</span>
+          <input type="text" id="download-filename" placeholder="">
+        </label>
+        <div class="modal-actions">
+          <button type="submit" class="primary" id="download-submit" data-i18n="downloadSubmit">开始下载</button>
+          <button type="button" class="ghost" id="download-cancel" data-i18n="downloadCancel">取消</button>
+        </div>
+        <p id="download-feedback" class="form-feedback" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+</main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "admin": {
+    "iterations": 200000,
+    "password_hash": "6KyqzxxNFaoFGlrKhxDjQ60Epqw/KSMhdWGkAVSGZzA=",
+    "salt": "5ylWjKCY2bEvUhggIUhPfg==",
+    "username": "wangxiao"
+  },
+  "security": {
+    "session_timeout_minutes": 60
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 23000
+  }
+}

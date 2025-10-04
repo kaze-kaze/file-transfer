@@ -1,6 +1,10 @@
 # Secure File Share
 
-Secure File Share 是一个面向单管理员的文件分享服务，可在本地端口运行，并通过反向代理对外提供下载链接。主要特性如下（English version available in `README-EN.md`）：
+<div align="center">
+  <sub><a href="README-EN.md">📖 English Version</a></sub>
+</div>
+
+Secure File Share 是一个面向单管理员的文件分享服务，可在本地端口运行，并通过反向代理对外提供下载链接。主要特性如下：
 
 - 仅监听 `127.0.0.1` 上 20000 以上的高位端口，方便配合 Nginx 等反向代理使用。
 - 管理端需要登录，默认管理员账号在安装时手动设置，支持自动生成随机凭据。

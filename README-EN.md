@@ -1,5 +1,9 @@
 # Secure File Share
 
+<div align="center">
+  <sub><a href="README.md">📖 中文版</a></sub>
+</div>
+
 Secure File Share is a single-admin file distribution service that listens only on a localhost high port so you can expose it via a reverse proxy such as Nginx. The application ships with a modern web console and a command-line helper script. Key capabilities include:
 
 - Binds to `127.0.0.1` on a configurable high port (≥ 20000) to keep the service off the public Internet by default.

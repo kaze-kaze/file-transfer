@@ -126,8 +126,8 @@ All directories are created automatically.
 
 ## 📖 Important Documentation
 
+- **[Command Reference](COMMANDS.md)** - Complete guide to all available commands and tools
 - **[Blocked Paths Rules](BLOCKED_PATHS.md)** - Detailed explanation of which directories and files are blocked
-- **[Security Fixes](SECURITY_FIXES.md)** - List of fixed security vulnerabilities
 
 ## Security Recommendations
 
@@ -136,22 +136,7 @@ All directories are created automatically.
 - Keep the proxy and firewall rules tightened so only trusted hosts can reach the localhost port.
 - Review `logs/server.log` regularly or forward it to your central logging platform.
 
-## 🔒 Security Fixes (2025-10-04)
 
-This project has undergone comprehensive security hardening with the following critical vulnerabilities fixed:
-
-### Fixed Security Issues
-
-1. ✅ **Path Traversal Protection** - Blocks access to system sensitive directories (/etc, /root, /home, etc.)
-2. ✅ **SSRF Attack Prevention** - Prevents internal network probing and cloud metadata access
-3. ✅ **Brute Force Protection** - Login rate limiting (5 attempts / 5 minutes)
-4. ✅ **Session Management Enhancement** - Limits concurrent sessions, auto-cleanup expired sessions
-5. ✅ **File Size Limits** - Prevents DoS attacks (max 2 GiB)
-6. ✅ **Error Message Protection** - Doesn't leak system details
-7. ✅ **CSP Policy Hardening** - Prevents XSS attacks
-8. ✅ **Cookie Security Attributes** - HttpOnly, Secure, SameSite=Strict
-
-See `SECURITY_FIXES.md` for detailed fix descriptions.
 
 ### Production Environment Setup
 

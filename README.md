@@ -1,7 +1,7 @@
 # Secure File Share
 
 <div align="center">
-  <sub><a href="README-EN.md">📖 English Version</a></sub>
+  <a href="README-EN.md">📖 English Version</a></sub>
 </div>
 
 Secure File Share 是一个面向单管理员的文件分享服务，可在本地端口运行，并通过反向代理对外提供下载链接。主要特性如下：

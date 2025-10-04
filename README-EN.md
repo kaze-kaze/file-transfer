@@ -15,8 +15,23 @@ Secure File Share is a single-admin file distribution service that listens only 
   - Optional IP allowlists
 - Persistent bookkeeping for download counts, expiration, and archives; logs are written to `logs/server.log`.
 - The console can download files directly from URLs. Downloads default to `data/downloads/` (you may create subdirectories there) and attempt a multithreaded transfer, falling back to single-threaded if needed.
-- CLI helper `manage.py` handles init/start/stop/status/run workflows.
+- CLI helper `manage.py` handles init/start/stop/status/run/uninstall workflows.
 - The web UI auto-detects the browser language (Chinese or English) and offers a manual toggle.
+
+## Installation
+
+1. **Download the source code**
+
+   ```bash
+   git clone https://github.com/kaze-kaze/file-transfer.git
+   cd file-transfer
+   ```
+
+2. **Check Python version**
+
+   ```bash
+   python3 --version  # Requires Python 3.10 or higher
+   ```
 
 ## Quick Start
 
@@ -56,6 +71,30 @@ Secure File Share is a single-admin file distribution service that listens only 
 
    ```bash
    python3 manage.py status
+   ```
+
+6. **Uninstall the service**
+
+   ```bash
+   # Interactive uninstall (prompts for confirmation)
+   python3 manage.py uninstall
+
+   # Skip confirmation and uninstall directly
+   python3 manage.py uninstall -y
+   ```
+
+   Uninstall will:
+   - ✓ Stop the running service
+   - ✓ Remove configuration files (`config/`)
+   - ✓ Remove data files (`data/`)
+   - ✓ Remove log files (`logs/`)
+   - ✓ Remove runtime files (`run/`)
+   - ✓ Keep source code files
+
+   To completely remove the project (including source code):
+   ```bash
+   cd ..
+   rm -rf file-transfer
    ```
 
 ## Reverse Proxy Example

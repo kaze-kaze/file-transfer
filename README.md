@@ -15,7 +15,22 @@ Secure File Share 是一个面向单管理员的文件分享服务，可在本�
   - 限制访问 IP（白名单）
 - 控制台支持直接输入外部 URL 下载文件，默认保存到 `data/downloads/` 目录（可在其下新建子目录）；优先使用多线程加速下载，不支持时自动回退单线程。
 - 已下载计数与过期控制持久化存储，并提供访问日志输出。
-- 提供命令行管理脚本 `manage.py`，支持初始化、启动、停止、状态查询以及前台运行模式。
+- 提供命令行管理脚本 `manage.py`，支持初始化、启动、停止、状态查询、前台运行以及卸载功能。
+
+## 安装
+
+1. **下载源代码**
+
+   ```bash
+   git clone https://github.com/kaze-kaze/file-transfer.git
+   cd file-transfer
+   ```
+
+2. **检查 Python 版本**
+
+   ```bash
+   python3 --version  # 需要 Python 3.10 或更高版本
+   ```
 
 ## 快速开始
 
@@ -55,6 +70,30 @@ Secure File Share 是一个面向单管理员的文件分享服务，可在本�
 
    ```bash
    python3 manage.py status
+   ```
+
+6. **卸载服务**
+
+   ```bash
+   # 交互式卸载（会提示确认）
+   python3 manage.py uninstall
+
+   # 跳过确认直接卸载
+   python3 manage.py uninstall -y
+   ```
+
+   卸载操作会：
+   - ✓ 停止运行中的服务
+   - ✓ 删除配置文件 (`config/`)
+   - ✓ 删除数据文件 (`data/`)
+   - ✓ 删除日志文件 (`logs/`)
+   - ✓ 删除运行时文件 (`run/`)
+   - ✓ 保留源代码文件
+
+   完全删除项目（包括源代码）：
+   ```bash
+   cd ..
+   rm -rf file-transfer
    ```
 
 ## 反向代理示例
